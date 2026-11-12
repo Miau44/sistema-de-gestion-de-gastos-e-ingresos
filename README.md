@@ -1,13 +1,8 @@
 # API de Control de Gastos - Diplomado Full Stack
 
-**Proyecto:** Sistema de gestión de gastos e ingresos  
-**Autor de la personalización:** Mauricio Gonzalo Morales Fernandez  
-**GitHub:** [Miau44](https://github.com/Miau44)  
-**Repositorio:** [sistema-de-gestion-de-gastos-e-ingresos](https://github.com/Miau44/sistema-de-gestion-de-gastos-e-ingresos)
-
 Adaptación académica de un proyecto de API REST desarrollado en **Node.js + Express** para el **Diplomado en Desarrollo Web Full Stack**.
 
-> **Origen y atribución:** Esta adaptación parte de la estructura pública del repositorio [toara22-stack/gastosAPI](https://github.com/toara22-stack/gastosAPI). Se conserva el reconocimiento al repositorio de origen. Comprueba las condiciones de uso o solicita autorización antes de redistribuir código de terceros, especialmente porque no se identificó una licencia pública en la raíz del repositorio consultado.
+
 
 ## Estado real del proyecto
 
@@ -26,7 +21,7 @@ Esta versión inicia un servidor HTTP y expone **dos endpoints informativos**. L
 npm install
 ```
 
-Copia `.env.example` a `.env`. El nombre del proyecto, el autor y su GitHub ya están configurados en `PROJECT_NAME`, `AUTHOR_NAME` y `AUTHOR_GITHUB`. Puedes modificarlos en tu copia local.
+Copia `.env.example` a `.env` y escribe tu nombre en `AUTHOR_NAME` y un título en `PROJECT_NAME`.
 
 Windows PowerShell:
 
@@ -53,7 +48,7 @@ Para ejecución normal usa `npm start`. Por defecto, la aplicación escucha en e
 | Método | Ruta | Uso |
 | ------ | ---- | --- |
 | GET | `/api/v1/health` | Comprueba que el servidor responde |
-| GET | `/api/v1/info` | Muestra nombre del proyecto, autor, GitHub, diplomado y versión |
+| GET | `/api/v1/info` | Muestra nombre del proyecto, autor, diplomado y versión |
 
 Ejemplo de respuesta de `/api/v1/health`:
 
@@ -61,7 +56,7 @@ Ejemplo de respuesta de `/api/v1/health`:
 {
   "status": "OK",
   "message": "API de Gestor de Gastos activa",
-  "proyecto": "Sistema de gestión de gastos e ingresos"
+  "proyecto": "Mi API de Control de Gastos"
 }
 ```
 
@@ -80,6 +75,3 @@ Las pruebas automatizadas se ejecutan con `npm test` (tras instalar dependencias
 4. Archivo `.env.example` y protección de `.env` en `.gitignore`.
 5. Pequeña mejora de seguridad: se oculta la cabecera `X-Powered-By`.
 
-## Créditos
-
-Base conceptual y código inicial: [toara22-stack/gastosAPI](https://github.com/toara22-stack/gastosAPI). Personalización académica: **Mauricio Gonzalo Morales Fernandez** ([Miau44](https://github.com/Miau44)).
