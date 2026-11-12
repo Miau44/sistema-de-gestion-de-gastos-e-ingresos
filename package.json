@@ -1,0 +1,39 @@
+{
+  "name": "gastos-api-diplomado",
+  "version": "1.0.1",
+  "description": "API de gestor de gastos - adaptación académica para el Diplomado en Desarrollo Web Full Stack",
+  "type": "module",
+  "private": true,
+  "author": {
+    "name": "Mauricio Gonzalo Morales Fernandez",
+    "url": "https://github.com/Miau44"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Miau44/sistema-de-gestion-de-gastos-e-ingresos.git"
+  },
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "keywords": ["gastos", "api-rest", "express", "diplomado", "full-stack"],
+  "dependencies": {
+    "bcryptjs": "3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.9",
+    "express": "^4.22.3",
+    "express-async-errors": "^3.1.1",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.11.4",
+    "morgan": "^1.12.1",
+    "mysql2": "^3.24.6",
+    "sequelize": "^6.37.8",
+    "swagger-jsdoc": "^6.3.0",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "nodemon": "^3.1.14"
+  }
+}
