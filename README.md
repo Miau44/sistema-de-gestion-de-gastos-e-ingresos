@@ -73,7 +73,8 @@ El arranque valida las variables obligatorias, verifica ambas conexiones y termi
 ```bash
 npm run dev       # nodemon, conecta DB y arranca
 npm start         # servidor normal
-npm test          # pruebas HTTP/unitarias con repositorios aislados en memoria
+npm test          # suite completa; integración queda omitida si no se habilita
+npm run test:integration # solo con bases de datos desechables terminadas en _test
 ```
 
 Swagger: http://localhost:3000/api-docs. Importa el token con **Authorize → Bearer JWT**.
@@ -109,6 +110,22 @@ Los presupuestos requieren `categoryId`, `month` (1–12), `year` y `amountLimit
 
 ## Pruebas y límites del entorno
 
-Las pruebas de `npm test` verifican endpoints HTTP, contraseñas/registro, duplicados, JWT válido/ausente/inválido, roles, propiedad de transacciones, validaciones, presupuestos, reportes y errores/rutas desconocidas con dobles de repositorio. No sustituyen pruebas de integración de infraestructura. Estas requieren levantar MongoDB y MySQL y configurar `.env`; no se ejecutan dentro de la suite para que `npm test` funcione en equipos sin bases instaladas.
+Las pruebas de `npm test` verifican endpoints HTTP, contraseñas/registro, duplicados, JWT válido/ausente/inválido, roles, propiedad de transacciones, validaciones, presupuestos, reportes, errores globales y rutas desconocidas. Incluyen comprobaciones de contrato para la consulta Mongoose por email, normalización de `_id` y espera del resultado de `Transaction.destroy()`.
+
+La prueba real `tests/integration/database.integration.test.js` cubre persistencia MongoDB, bcrypt, sesiones, claves foráneas de categorías, aislamiento entre usuarios, presupuestos, reportes y eliminación en MySQL. No usa datos de producción. Para ejecutarla, instala e inicia MongoDB y MySQL, crea una base Mongo llamada `bd_gastos_test` y una base MySQL llamada `bd_gastos_test`, y configura temporalmente estas variables en PowerShell (no guardes credenciales en Git):
+
+```powershell
+$env:RUN_DB_INTEGRATION = "true"
+$env:MONGO_URI = "mongodb://127.0.0.1:27017/bd_gastos_test"
+$env:MYSQL_HOST = "localhost"
+$env:MYSQL_PORT = "3306"
+$env:MYSQL_USER = "root"
+$env:MYSQL_PASSWORD = "tu_clave"
+$env:MYSQL_DB = "bd_gastos_test"
+$env:JWT_SECRET = "cambia-esto-por-un-secreto-de-prueba-de-mas-de-32-caracteres"
+npm run test:integration
+```
+
+La suite verifica que ambos nombres de base terminen en `_test` antes de conectarse y omite las pruebas integradas salvo que `RUN_DB_INTEGRATION=true`. La prueba limpia únicamente los documentos/filas que crea usando IDs y direcciones únicas.
 
 Errores frecuentes: `ECONNREFUSED` indica que falta levantar MySQL/MongoDB; una base MySQL inexistente debe crearse primero; los puertos y credenciales deben coincidir con `.env`; un JWT corto impide el arranque.

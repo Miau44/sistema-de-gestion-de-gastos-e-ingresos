@@ -1,4 +1,4 @@
-﻿{
+{
     "name":  "gastos-api-diplomado",
     "version":  "1.0.1",
     "description":  "API de gestor de gastos - adaptación académica para el Diplomado en Desarrollo Web Full Stack",
@@ -15,7 +15,8 @@
     "scripts":  {
                     "start":  "node src/index.js",
                     "dev":  "nodemon src/index.js",
-                    "test":  "node --test tests/*.test.js"
+                    "test":  "node --test tests/*.test.js",
+                    "test:integration":  "node --test tests/integration/database.integration.test.js"
                 },
     "keywords":  [
                      "gastos",

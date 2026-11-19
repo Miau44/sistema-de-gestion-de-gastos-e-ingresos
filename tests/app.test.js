@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
 import { createApp } from '../src/app.js';
@@ -7,9 +7,9 @@ import { createServices } from '../src/application/services.js';
 process.env.NODE_ENV = 'test';
 const env = { NODE_ENV: 'test', JWT_SECRET: 'unit-test-secret-that-is-at-least-32-characters' };
 function fixture() {
-  const state = { users: [], categories: [{id:1,name:'Salario',type:'INCOME'},{id:2,name:'Comida',type:'EXPENSE'}], transactions: [], budgets: [], currencies: [], audits: [] };
+  let nextUserId = 1; const state = { users: [], categories: [{id:1,name:'Salario',type:'INCOME'},{id:2,name:'Comida',type:'EXPENSE'}], transactions: [], budgets: [], currencies: [], audits: [] };
   const repos = {
-    users: { findByEmail: async email=>state.users.find(x=>x.email===email)||null, findById: async id=>state.users.find(x=>x.id===id)||null, create: async d=>(state.users.push(d),d) },
+    users: { findByEmail: async email=>state.users.find(x=>x.email===email)||null, findById: async id=>state.users.find(x=>x.id===id)||null, create: async d=>{const user={...d,id:`memory-${nextUserId++}`};state.users.push(user);return user;} },
     categories: { list: async()=>state.categories, findById: async id=>state.categories.find(x=>String(x.id)===String(id)), create: async d=>{const x={id:state.categories.length+1,...d};state.categories.push(x);return x;}, update:async(id,d)=>{const x=state.categories.find(x=>String(x.id)===String(id));if(x)Object.assign(x,d);return x;},remove:async id=>{const n=state.categories.length;state.categories=state.categories.filter(x=>String(x.id)!==String(id));return state.categories.length<n;} },
     transactions: { list:async uid=>state.transactions.filter(x=>x.userId===uid),create:async d=>{const x={id:state.transactions.length+1,...d};state.transactions.push(x);return x;},findOwned:async(id,uid)=>state.transactions.find(x=>String(x.id)===String(id)&&x.userId===uid)||null,updateOwned:async(id,uid,d)=>{const x=state.transactions.find(x=>String(x.id)===String(id)&&x.userId===uid);if(x)Object.assign(x,d);return x;},removeOwned:async(id,uid)=>{const n=state.transactions.length;state.transactions=state.transactions.filter(x=>!(String(x.id)===String(id)&&x.userId===uid));return n!==state.transactions.length;},usesCategory:async id=>state.transactions.some(x=>String(x.categoryId)===String(id)),sumExpenses:async(uid,c,m,y)=>state.transactions.filter(x=>x.userId===uid&&x.categoryId===c&&x.type==='EXPENSE'&&x.date.startsWith(`${y}-${String(m).padStart(2,'0')}`)).reduce((t,x)=>t+x.convertedAmount,0),summary:async uid=>{const tx=state.transactions.filter(x=>x.userId===uid);const totalIncome=tx.filter(x=>x.type==='INCOME').reduce((n,x)=>n+x.convertedAmount,0),totalExpense=tx.filter(x=>x.type==='EXPENSE').reduce((n,x)=>n+x.convertedAmount,0);return {totalIncome,totalExpense,balance:totalIncome-totalExpense};},byCategory:async uid=>state.transactions.filter(x=>x.userId===uid),byExchangeRate:async uid=>state.transactions.filter(x=>x.userId===uid) },
     budgets:{list:async uid=>state.budgets.filter(x=>x.userId===uid),upsert:async d=>{const x={id:state.budgets.length+1,...d};state.budgets.push(x);return x;},removeOwned:async(id,uid)=>{const n=state.budgets.length;state.budgets=state.budgets.filter(x=>!(x.id===Number(id)&&x.userId===uid));return n!==state.budgets.length;}},

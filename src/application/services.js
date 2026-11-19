@@ -1,19 +1,16 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { randomUUID } from 'node:crypto';
 import AppError from '../domain/errors/AppError.js';
 import { validateTransaction } from '../domain/entities/transaction.js';
-import { createRepositories } from '../infrastructure/database/repositories.js';
 
-export function createServices({ users, categories, transactions, budgets, currencies, audits, env = process.env } = {}) {
-  if (!users) ({ users, categories, transactions, budgets, currencies, audits } = createRepositories());
-  const token = (user) => jwt.sign({ sub: String(user.id), role: user.role }, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN || '1d' });
+export function createServices({ users, categories, transactions, budgets, currencies, audits, env = process.env }) {
+  const token = user => jwt.sign({ sub: userIdentifier(user), role: user.role }, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN || '1d' });
   const audit = async (action, entity, entityId, userId, details = {}) => audits?.create({ action, entity, entityId: String(entityId), userId: String(userId), details });
   return {
     register: async ({ name, email, password, baseCurrency = 'BOB' }) => {
       if (!name?.trim() || !/^\S+@\S+\.\S+$/.test(email || '') || typeof password !== 'string' || password.length < 8) throw new AppError('Nombre, correo válido y contraseña (mínimo 8 caracteres) son obligatorios');
       if (await users.findByEmail(email.toLowerCase())) throw new AppError('El correo ya está registrado', 409, 'EMAIL_EXISTS');
-      const user = await users.create({ id: randomUUID(), name: name.trim(), email: email.toLowerCase(), password: await bcrypt.hash(password, 12), role: 'USER', baseCurrency });
+      const user = await users.create({ name: name.trim(), email: email.toLowerCase(), password: await bcrypt.hash(password, 12), role: 'USER', baseCurrency });
       return { user: publicUser(user), token: token(user) };
     },
     login: async ({ email, password } = {}) => {
@@ -44,4 +41,13 @@ export function createServices({ users, categories, transactions, budgets, curre
     reportAudits: (userId) => audits.listByUser(userId)
   };
 }
-function publicUser(user) { const { password, ...safe } = user; return safe; }
+function userIdentifier(user) {
+  const id = user?._id ?? user?.id;
+  if (!id || String(id) === 'undefined' || String(id) === 'null') throw new Error('El repositorio de usuarios devolvió un identificador inválido');
+  return String(id);
+}
+
+function publicUser(user) {
+  const { password, _id, ...safe } = user;
+  return { ...safe, id: userIdentifier(user) };
+}
