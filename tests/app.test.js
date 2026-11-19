@@ -25,3 +25,48 @@ test('health, info, docs and unknown route return expected responses',async()=>{
 test('register/login protect private route and reject duplicate or invalid credentials',async()=>{const {app}=fixture();await withServer(app,async base=>{const reg=await json(base,'/api/v1/auth/register',{method:'POST',body:{name:'Ana',email:'ana@demo.bo',password:'secreto123',role:'ADMIN'}});assert.equal(reg.status,201);assert.equal(reg.body.user.role,'USER');assert.equal('password' in reg.body.user,false);assert.ok(reg.body.token);assert.equal((await json(base,'/api/v1/auth/register',{method:'POST',body:{name:'Ana',email:'ana@demo.bo',password:'secreto123'}})).status,409);assert.equal((await json(base,'/api/v1/auth/login',{method:'POST',body:{email:'ana@demo.bo',password:'nope'}})).status,401);assert.equal((await json(base,'/api/v1/auth/me')).status,401);assert.equal((await json(base,'/api/v1/auth/me',{token:reg.body.token})).status,200);assert.equal((await json(base,'/api/v1/auth/me',{token:'bad'})).status,401);});});
 test('transaction CRUD validates category and amount, scopes by owner and drives reports/budgets',async()=>{const {app}=fixture();await withServer(app,async base=>{const a=(await json(base,'/api/v1/auth/register',{method:'POST',body:{name:'Ana',email:'a@demo.bo',password:'secreto123'}})).body.token;const b=(await json(base,'/api/v1/auth/register',{method:'POST',body:{name:'Beto',email:'b@demo.bo',password:'secreto123'}})).body.token;assert.equal((await json(base,'/api/v1/transactions',{method:'POST',token:a,body:{type:'EXPENSE',amount:0,categoryId:2}})).status,400);assert.equal((await json(base,'/api/v1/transactions',{method:'POST',token:a,body:{type:'EXPENSE',amount:15,categoryId:1}})).status,400);const made=await json(base,'/api/v1/transactions',{method:'POST',token:a,body:{type:'EXPENSE',amount:50,categoryId:2,date:'2026-11-19'}});assert.equal(made.status,201);assert.ok(made.body.userId);assert.equal((await json(base,'/api/v1/transactions',{token:b})).body.length,0);assert.equal((await json(base,`/api/v1/transactions/${made.body.id}`,{method:'PUT',token:b,body:{amount:1}})).status,404);assert.equal((await json(base,'/api/v1/transactions',{token:a})).body.length,1);const upd=await json(base,'/api/v1/transactions/1',{method:'PUT',token:a,body:{amount:60,userId:'attacker'}}); assert.equal(upd.body.amount,60); assert.notEqual(upd.body.userId,'attacker'); assert.equal((await json(base,'/api/v1/transactions',{token:b})).body.length,0);assert.equal((await json(base,'/api/v1/reports/summary',{token:a})).body.totalExpense,60);const budget=await json(base,'/api/v1/budgets',{method:'POST',token:a,body:{categoryId:2,month:11,year:2026,amountLimit:40}});assert.equal(budget.status,201);assert.equal((await json(base,'/api/v1/budgets',{token:a})).body[0].exceeded,true);const admin=jwt.sign({sub:'admin',role:'ADMIN'},env.JWT_SECRET);assert.equal((await json(base,'/api/v1/categories/2',{method:'DELETE',token:admin})).status,409);assert.equal((await json(base,'/api/v1/transactions/1',{method:'DELETE',token:a})).body.deleted,true);});});
 test('ADMIN puede registrar tipos de cambio y las consultas validan la fecha', async () => { const {app,state}=fixture(); await withServer(app,async base=>{ const reg=(await json(base,'/api/v1/auth/register',{method:'POST',body:{name:'Ana',email:'c@demo.bo',password:'secreto123'}})).body; assert.equal((await json(base,'/api/v1/currencies',{method:'POST',token:reg.token,body:{code:'USD',name:'Dolar',exchangeRate:6.9,date:'2026-11-19'}})).status,403); const admin=jwt.sign({sub:'admin',role:'ADMIN'},env.JWT_SECRET); assert.equal((await json(base,'/api/v1/currencies',{method:'POST',token:admin,body:{code:'USD',name:'Dolar',exchangeRate:6.9,date:'2026-11-19',source:'test fixture'}})).status,201); assert.equal(state.currencies[0].source,'test fixture'); assert.equal((await json(base,'/api/v1/currencies/by-date?date=2026-11-19')).body.length,1); assert.equal((await json(base,'/api/v1/currencies/by-date?date=invalid')).status,400); }); });
+
+test('login válido, token expirado y administración de categorías respetan permisos y validaciones', async () => {
+  const { app } = fixture();
+  await withServer(app, async base => {
+    const registered = await json(base, '/api/v1/auth/register', { method: 'POST', body: { name: 'Eva', email: 'eva@demo.bo', password: 'secreto123' } });
+    const logged = await json(base, '/api/v1/auth/login', { method: 'POST', body: { email: 'eva@demo.bo', password: 'secreto123' } });
+    assert.equal(logged.status, 200);
+    assert.equal((await json(base, '/api/v1/auth/me', { token: jwt.sign({ sub: registered.body.user.id, role: 'USER', exp: Math.floor(Date.now() / 1000) - 5 }, env.JWT_SECRET) })).status, 401);
+    assert.equal((await json(base, '/api/v1/categories', { method: 'POST', token: logged.body.token, body: { name: 'Otros', type: 'EXPENSE' } })).status, 403);
+    const admin = jwt.sign({ sub: 'admin', role: 'ADMIN' }, env.JWT_SECRET);
+    assert.equal((await json(base, '/api/v1/categories', { method: 'POST', token: admin, body: { name: 'Honorarios', type: 'INCOME' } })).status, 201);
+    assert.equal((await json(base, '/api/v1/categories/3', { method: 'PUT', token: admin, body: { name: 'Servicios', type: 'INCOME' } })).body.name, 'Servicios');
+    assert.equal((await json(base, '/api/v1/categories/3', { method: 'DELETE', token: admin })).body.deleted, true);
+    assert.equal((await json(base, '/api/v1/categories', { method: 'POST', token: admin, body: { name: 'Mala', type: 'OTHER' } })).status, 400);
+  });
+});
+
+test('ingresos, reportes por categoría/tipo de cambio, auditoría y borrado de presupuesto usan datos del usuario', async () => {
+  const { app } = fixture();
+  await withServer(app, async base => {
+    const token = (await json(base, '/api/v1/auth/register', { method: 'POST', body: { name: 'Luis', email: 'luis@demo.bo', password: 'secreto123' } })).body.token;
+    assert.equal((await json(base, '/api/v1/transactions', { method: 'POST', token, body: { type: 'INCOME', amount: 200, categoryId: 1, date: '2026-11-19' } })).status, 201);
+    assert.equal((await json(base, '/api/v1/transactions', { method: 'POST', token, body: { type: 'EXPENSE', amount: 30, categoryId: 2, currency: 'USD', date: '2026-11-19' } })).status, 400);
+    assert.equal((await json(base, '/api/v1/reports/summary', { token })).body.balance, 200);
+    assert.equal((await json(base, '/api/v1/reports/by-category', { token })).body.length, 1);
+    assert.equal((await json(base, '/api/v1/reports/by-exchange-rate', { token })).body.length, 1);
+    assert.equal((await json(base, '/api/v1/reports/audits', { token })).body.length, 1);
+    const budget = await json(base, '/api/v1/budgets', { method: 'POST', token, body: { categoryId: 2, month: 11, year: 2026, amountLimit: 100 } });
+    assert.equal((await json(base, `/api/v1/budgets/${budget.body.id}`, { method: 'DELETE', token })).body.deleted, true);
+    assert.equal((await json(base, '/api/v1/budgets', { token })).body.length, 0);
+  });
+});
+
+test('el middleware global oculta errores internos y responde JSON ante rutas inexistentes', async () => {
+  const app = createApp({ env, services: { verify: () => ({ sub: 'u1', role: 'USER' }), listTransactions: async () => { throw new Error('detalle privado de SQL'); } } });
+  await withServer(app, async base => {
+    const failed = await json(base, '/api/v1/transactions', { token: 'token-falso' });
+    assert.equal(failed.status, 500);
+    assert.equal(failed.body.error.message, 'Error interno del servidor');
+    assert.equal(JSON.stringify(failed.body).includes('detalle privado'), false);
+    const missing = await json(base, '/api/v1/not-a-route');
+    assert.equal(missing.status, 404);
+    assert.equal(missing.body.error.code, 'NOT_FOUND');
+  });
+});
