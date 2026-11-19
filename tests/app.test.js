@@ -1,39 +1,27 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
+import jwt from 'jsonwebtoken';
+import { createApp } from '../src/app.js';
+import { createServices } from '../src/application/services.js';
 
-// Evita que app.js abra su propio puerto mientras se ejecutan las pruebas.
 process.env.NODE_ENV = 'test';
-process.env.PROJECT_NAME = 'Proyecto de prueba';
-process.env.AUTHOR_NAME = 'Estudiante de prueba';
-process.env.AUTHOR_GITHUB = 'https://github.com/estudiante-de-prueba';
-
-const { default: app } = await import('../src/app.js');
-
-async function request(path) {
-  const server = app.listen(0);
-  try {
-    await new Promise((resolve) => server.once('listening', resolve));
-    const address = server.address();
-    const response = await fetch(`http://127.0.0.1:${address.port}${path}`);
-    return { status: response.status, body: await response.json() };
-  } finally {
-    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-  }
+const env = { NODE_ENV: 'test', JWT_SECRET: 'unit-test-secret-that-is-at-least-32-characters' };
+function fixture() {
+  const state = { users: [], categories: [{id:1,name:'Salario',type:'INCOME'},{id:2,name:'Comida',type:'EXPENSE'}], transactions: [], budgets: [], currencies: [], audits: [] };
+  const repos = {
+    users: { findByEmail: async email=>state.users.find(x=>x.email===email)||null, findById: async id=>state.users.find(x=>x.id===id)||null, create: async d=>(state.users.push(d),d) },
+    categories: { list: async()=>state.categories, findById: async id=>state.categories.find(x=>String(x.id)===String(id)), create: async d=>{const x={id:state.categories.length+1,...d};state.categories.push(x);return x;}, update:async(id,d)=>{const x=state.categories.find(x=>String(x.id)===String(id));if(x)Object.assign(x,d);return x;},remove:async id=>{const n=state.categories.length;state.categories=state.categories.filter(x=>String(x.id)!==String(id));return state.categories.length<n;} },
+    transactions: { list:async uid=>state.transactions.filter(x=>x.userId===uid),create:async d=>{const x={id:state.transactions.length+1,...d};state.transactions.push(x);return x;},findOwned:async(id,uid)=>state.transactions.find(x=>String(x.id)===String(id)&&x.userId===uid)||null,updateOwned:async(id,uid,d)=>{const x=state.transactions.find(x=>String(x.id)===String(id)&&x.userId===uid);if(x)Object.assign(x,d);return x;},removeOwned:async(id,uid)=>{const n=state.transactions.length;state.transactions=state.transactions.filter(x=>!(String(x.id)===String(id)&&x.userId===uid));return n!==state.transactions.length;},usesCategory:async id=>state.transactions.some(x=>String(x.categoryId)===String(id)),sumExpenses:async(uid,c,m,y)=>state.transactions.filter(x=>x.userId===uid&&x.categoryId===c&&x.type==='EXPENSE'&&x.date.startsWith(`${y}-${String(m).padStart(2,'0')}`)).reduce((t,x)=>t+x.convertedAmount,0),summary:async uid=>{const tx=state.transactions.filter(x=>x.userId===uid);const totalIncome=tx.filter(x=>x.type==='INCOME').reduce((n,x)=>n+x.convertedAmount,0),totalExpense=tx.filter(x=>x.type==='EXPENSE').reduce((n,x)=>n+x.convertedAmount,0);return {totalIncome,totalExpense,balance:totalIncome-totalExpense};},byCategory:async uid=>state.transactions.filter(x=>x.userId===uid),byExchangeRate:async uid=>state.transactions.filter(x=>x.userId===uid) },
+    budgets:{list:async uid=>state.budgets.filter(x=>x.userId===uid),upsert:async d=>{const x={id:state.budgets.length+1,...d};state.budgets.push(x);return x;},removeOwned:async(id,uid)=>{const n=state.budgets.length;state.budgets=state.budgets.filter(x=>!(x.id===Number(id)&&x.userId===uid));return n!==state.budgets.length;}},
+    currencies:{list:async()=>state.currencies,findByCodeAndDate:async(code,date)=>state.currencies.find(x=>x.code===code&&x.date===date)||null,create:async d=>{const x={id:String(state.currencies.length+1),...d};state.currencies.push(x);return x;},findByDate:async date=>state.currencies.filter(x=>x.date===date)},
+    audits:{create:async d=>(state.audits.push(d),d),listByUser:async uid=>state.audits.filter(x=>x.userId===uid)}
+  };
+  const services=createServices({...repos,env}); return {app:createApp({services,env}),state};
 }
+async function withServer(app, fn) { const server=app.listen(0); await new Promise(r=>server.once('listening',r)); try { return await fn(`http://127.0.0.1:${server.address().port}`); } finally { await new Promise((r,j)=>server.close(e=>e?j(e):r())); } }
+async function json(base,path,{method='GET',body,token}={}) { const res=await fetch(base+path,{method,headers:{...(body?{'content-type':'application/json'}:{}),...(token?{authorization:`Bearer ${token}`}:{})},body:body?JSON.stringify(body):undefined});return {status:res.status,body:await res.json()}; }
 
-test('GET /api/v1/health mantiene el estado de la API', async () => {
-  const result = await request('/api/v1/health');
-  assert.equal(result.status, 200);
-  assert.equal(result.body.status, 'OK');
-  assert.equal(result.body.message, 'API de Gestor de Gastos activa');
-  assert.equal(result.body.proyecto, 'Proyecto de prueba');
-});
-
-test('GET /api/v1/info identifica el diplomado y el autor', async () => {
-  const result = await request('/api/v1/info');
-  assert.equal(result.status, 200);
-  assert.equal(result.body.proyecto, 'Proyecto de prueba');
-  assert.equal(result.body.autor, 'Estudiante de prueba');
-  assert.equal(result.body.github, 'https://github.com/estudiante-de-prueba');
-  assert.equal(result.body.programa, 'Diplomado en Desarrollo Web Full Stack');
-});
+test('health, info, docs and unknown route return expected responses',async()=>{const {app}=fixture();await withServer(app,async base=>{assert.equal((await json(base,'/api/v1/health')).body.status,'OK');assert.equal((await json(base,'/api/v1/info')).body.programa,'Diplomado en Desarrollo Web Full Stack');assert.equal((await fetch(base+'/api-docs')).status,200);assert.equal((await json(base,'/nope')).status,404);});});
+test('register/login protect private route and reject duplicate or invalid credentials',async()=>{const {app}=fixture();await withServer(app,async base=>{const reg=await json(base,'/api/v1/auth/register',{method:'POST',body:{name:'Ana',email:'ana@demo.bo',password:'secreto123',role:'ADMIN'}});assert.equal(reg.status,201);assert.equal(reg.body.user.role,'USER');assert.equal('password' in reg.body.user,false);assert.ok(reg.body.token);assert.equal((await json(base,'/api/v1/auth/register',{method:'POST',body:{name:'Ana',email:'ana@demo.bo',password:'secreto123'}})).status,409);assert.equal((await json(base,'/api/v1/auth/login',{method:'POST',body:{email:'ana@demo.bo',password:'nope'}})).status,401);assert.equal((await json(base,'/api/v1/auth/me')).status,401);assert.equal((await json(base,'/api/v1/auth/me',{token:reg.body.token})).status,200);assert.equal((await json(base,'/api/v1/auth/me',{token:'bad'})).status,401);});});
+test('transaction CRUD validates category and amount, scopes by owner and drives reports/budgets',async()=>{const {app}=fixture();await withServer(app,async base=>{const a=(await json(base,'/api/v1/auth/register',{method:'POST',body:{name:'Ana',email:'a@demo.bo',password:'secreto123'}})).body.token;const b=(await json(base,'/api/v1/auth/register',{method:'POST',body:{name:'Beto',email:'b@demo.bo',password:'secreto123'}})).body.token;assert.equal((await json(base,'/api/v1/transactions',{method:'POST',token:a,body:{type:'EXPENSE',amount:0,categoryId:2}})).status,400);assert.equal((await json(base,'/api/v1/transactions',{method:'POST',token:a,body:{type:'EXPENSE',amount:15,categoryId:1}})).status,400);const made=await json(base,'/api/v1/transactions',{method:'POST',token:a,body:{type:'EXPENSE',amount:50,categoryId:2,date:'2026-11-19'}});assert.equal(made.status,201);assert.ok(made.body.userId);assert.equal((await json(base,'/api/v1/transactions',{token:b})).body.length,0);assert.equal((await json(base,`/api/v1/transactions/${made.body.id}`,{method:'PUT',token:b,body:{amount:1}})).status,404);assert.equal((await json(base,'/api/v1/transactions',{token:a})).body.length,1);const upd=await json(base,'/api/v1/transactions/1',{method:'PUT',token:a,body:{amount:60,userId:'attacker'}}); assert.equal(upd.body.amount,60); assert.notEqual(upd.body.userId,'attacker'); assert.equal((await json(base,'/api/v1/transactions',{token:b})).body.length,0);assert.equal((await json(base,'/api/v1/reports/summary',{token:a})).body.totalExpense,60);const budget=await json(base,'/api/v1/budgets',{method:'POST',token:a,body:{categoryId:2,month:11,year:2026,amountLimit:40}});assert.equal(budget.status,201);assert.equal((await json(base,'/api/v1/budgets',{token:a})).body[0].exceeded,true);const admin=jwt.sign({sub:'admin',role:'ADMIN'},env.JWT_SECRET);assert.equal((await json(base,'/api/v1/categories/2',{method:'DELETE',token:admin})).status,409);assert.equal((await json(base,'/api/v1/transactions/1',{method:'DELETE',token:a})).body.deleted,true);});});
+test('ADMIN puede registrar tipos de cambio y las consultas validan la fecha', async () => { const {app,state}=fixture(); await withServer(app,async base=>{ const reg=(await json(base,'/api/v1/auth/register',{method:'POST',body:{name:'Ana',email:'c@demo.bo',password:'secreto123'}})).body; assert.equal((await json(base,'/api/v1/currencies',{method:'POST',token:reg.token,body:{code:'USD',name:'Dolar',exchangeRate:6.9,date:'2026-11-19'}})).status,403); const admin=jwt.sign({sub:'admin',role:'ADMIN'},env.JWT_SECRET); assert.equal((await json(base,'/api/v1/currencies',{method:'POST',token:admin,body:{code:'USD',name:'Dolar',exchangeRate:6.9,date:'2026-11-19',source:'test fixture'}})).status,201); assert.equal(state.currencies[0].source,'test fixture'); assert.equal((await json(base,'/api/v1/currencies/by-date?date=2026-11-19')).body.length,1); assert.equal((await json(base,'/api/v1/currencies/by-date?date=invalid')).status,400); }); });

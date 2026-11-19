@@ -1,48 +1,31 @@
-import 'dotenv/config';
 import 'express-async-errors';
 import express from 'express';
-import morgan from 'morgan';
 import cors from 'cors';
+import morgan from 'morgan';
+import swaggerUi from 'swagger-ui-express';
+import { createApi } from './presentation/api.js';
+import { createServices } from './application/services.js';
+import { swaggerSpec } from './infrastructure/config/swagger.js';
 
-const app = express();
-
-// Datos editables en el archivo .env local (no se publica en GitHub).
-const PROJECT_NAME = process.env.PROJECT_NAME || 'Sistema de gestión de gastos e ingresos';
-const AUTHOR_NAME = process.env.AUTHOR_NAME || 'Mauricio Gonzalo Morales Fernandez';
-const AUTHOR_GITHUB = process.env.AUTHOR_GITHUB || 'https://github.com/Miau44';
-
-app.disable('x-powered-by');
-app.use(cors());
-app.use(express.json());
-app.use(morgan('dev'));
-app.use('/uploads', express.static('uploads'));
-
-// Ruta original, conservada para mantener compatibilidad.
-app.get('/api/v1/health', (req, res) => {
-  res.status(200).json({
-    status: 'OK',
-    message: 'API de Gestor de Gastos activa',
-    proyecto: PROJECT_NAME
+export function createApp({ services = createServices(), env = process.env } = {}) {
+  const app = express();
+  app.disable('x-powered-by');
+  app.use(cors());
+  app.use(express.json({ limit: '1mb' }));
+  app.use(morgan(env.NODE_ENV === 'test' ? 'tiny' : 'dev'));
+  app.get('/api/v1/health', (_req, res) => res.json({ status: 'OK', message: 'API de Gestor de Gastos activa', proyecto: env.PROJECT_NAME || 'Sistema de gestión de gastos e ingresos' }));
+  app.get('/api/v1/info', (_req, res) => res.json({ proyecto: env.PROJECT_NAME || 'Sistema de gestión de gastos e ingresos', autor: env.AUTHOR_NAME || 'Mauricio Gonzalo Morales Fernandez', github: env.AUTHOR_GITHUB || 'https://github.com/Miau44', programa: 'Diplomado en Desarrollo Web Full Stack', version: '2.0.0' }));
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+  app.use('/api/v1', createApi(services, env));
+  app.use((_req, res) => res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Ruta no encontrada' } }));
+  app.use((error, _req, res, _next) => {
+    if (error?.code === 11000) return res.status(409).json({ error: { code: 'DUPLICATE_RESOURCE', message: 'El recurso ya existe' } });
+    const status = Number(error.status || error.statusCode || 500);
+    if (status >= 500) console.error(error);
+    res.status(status).json({ error: { code: error.code || 'INTERNAL_ERROR', message: status >= 500 ? 'Error interno del servidor' : error.message } });
   });
-});
-
-// Pequena personalizacion para identificar el trabajo del diplomado.
-app.get('/api/v1/info', (req, res) => {
-  res.status(200).json({
-    proyecto: PROJECT_NAME,
-    autor: AUTHOR_NAME,
-    github: AUTHOR_GITHUB,
-    programa: 'Diplomado en Desarrollo Web Full Stack',
-    version: '1.0.1'
-  });
-});
-
-const PORT = process.env.PORT || 3000;
-
-if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
-    console.log(`${PROJECT_NAME}: servidor escuchando en el puerto ${PORT}`);
-  });
+  return app;
 }
 
+const app = createApp();
 export default app;
